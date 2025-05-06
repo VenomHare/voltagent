@@ -12,6 +12,7 @@ export default defineConfig({
   dts: true,
   esbuildOptions(options) {
     options.keepNames = true;
+    options.logLevel = "verbose";
     return options;
   },
 });

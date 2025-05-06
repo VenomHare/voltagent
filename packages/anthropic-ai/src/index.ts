@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import type { ContentBlock, Message, Model, Usage } from "@anthropic-ai/sdk/resources/messages";
+import type { ContentBlock, Message, Usage } from "@anthropic-ai/sdk/resources/messages";
 import type {
   BaseMessage,
   GenerateObjectOptions,
@@ -13,6 +13,7 @@ import type {
   StepWithContent,
   StreamObjectOptions,
   StreamTextOptions,
+  VoltAgentError,
 } from "@voltagent/core";
 import type { z } from "zod";
 import type {
@@ -23,7 +24,7 @@ import type {
 } from "./types";
 import { coreToolToAnthropic } from "./utils";
 
-export class AnthropicProvider implements LLMProvider<Model> {
+export class AnthropicProvider implements LLMProvider<string> {
   private anthropic: Anthropic;
   private model: string;
 
@@ -42,7 +43,7 @@ export class AnthropicProvider implements LLMProvider<Model> {
     this.streamObject = this.streamObject.bind(this);
   }
 
-  getModelIdentifier(model: Model): string {
+  getModelIdentifier(model: string): string {
     return model;
   }
 
@@ -129,7 +130,7 @@ export class AnthropicProvider implements LLMProvider<Model> {
   }
 
   private async handleStepFinish(
-    options: GenerateTextOptions<Model>,
+    options: GenerateTextOptions<string>,
     responseText: string,
     toolCalls: AnthropicToolCall[],
     usage?: Usage,
@@ -177,7 +178,7 @@ export class AnthropicProvider implements LLMProvider<Model> {
     };
   }
 
-  async generateText(options: GenerateTextOptions<Model>): Promise<ProviderTextResponse<any>> {
+  async generateText(options: GenerateTextOptions<string>): Promise<ProviderTextResponse<any>> {
     try {
       const anthropicMessages = options.messages.map(this.toMessage);
       const anthropicTools = options.tools ? coreToolToAnthropic(options.tools) : undefined;
@@ -210,12 +211,16 @@ export class AnthropicProvider implements LLMProvider<Model> {
 
       return this.createResponseObject(response, responseText, toolCalls);
     } catch (error) {
+      const voltError: VoltAgentError = {
+        message: "Error while generating object in Anthropic AI",
+        originalError: error,
+      };
       console.error("Anthropic API error:", error);
-      return { error: String(error) } as any;
+      throw voltError;
     }
   }
 
-  async streamText(options: StreamTextOptions<Model>): Promise<ProviderTextStreamResponse<any>> {
+  async streamText(options: StreamTextOptions<string>): Promise<ProviderTextStreamResponse<any>> {
     try {
       const anthropicMessages = options.messages.map(this.toMessage);
       const anthropicTools = options.tools ? coreToolToAnthropic(options.tools) : undefined;
@@ -312,11 +317,15 @@ export class AnthropicProvider implements LLMProvider<Model> {
               }
             }
           } catch (error) {
+            const voltError: VoltAgentError = {
+              message: "Error while parsing streamed text response in Anthropic AI",
+              originalError: error,
+            };
             // Handle errors
             if (options.onError) {
-              options.onError(error);
+              options.onError(voltError);
             }
-            controller.error(error);
+            controller.error(voltError);
           }
         },
       });
@@ -326,17 +335,21 @@ export class AnthropicProvider implements LLMProvider<Model> {
         textStream: textStream,
       };
     } catch (error) {
+      const voltError: VoltAgentError = {
+        message: "Error while streaming text in Anthropic AI",
+        originalError: error,
+      };
       //Handles Api Errors
       if (options.onError) {
-        options.onError(error);
+        options.onError(voltError);
       }
       console.error("Anthropic API error:", error);
-      return { error: String(error) } as any;
+      throw voltError;
     }
   }
 
   async generateObject<TSchema extends z.ZodType>(
-    options: GenerateObjectOptions<Model, TSchema>,
+    options: GenerateObjectOptions<string, TSchema>,
   ): Promise<ProviderObjectResponse<any, z.infer<TSchema>>> {
     const { temperature = 0.2, maxTokens = 1024, topP, stopSequences } = options.provider || {};
 
@@ -400,15 +413,20 @@ export class AnthropicProvider implements LLMProvider<Model> {
         finishReason: response.stop_reason as string,
       };
     } catch (error) {
+      const voltError: VoltAgentError = {
+        message: "Error while generating object in Anthropic AI",
+        originalError: error,
+      };
       console.error(
         `Failed to create object ${error instanceof Error ? error.message : String(error)}`,
       );
-      return { error: String(error) } as any;
+
+      throw voltError;
     }
   }
 
   async streamObject<TSchema extends z.ZodType>(
-    options: StreamObjectOptions<Model, TSchema>,
+    options: StreamObjectOptions<string, TSchema>,
   ): Promise<ProviderObjectStreamResponse<any, z.infer<TSchema>>> {
     try {
       const anthropicMessages = options.messages.map(this.toMessage);
@@ -486,10 +504,14 @@ export class AnthropicProvider implements LLMProvider<Model> {
               }
             }
           } catch (error) {
+            const voltError: VoltAgentError = {
+              message: "Error while parsing the streamed object response in Anthropic AI",
+              originalError: error,
+            };
             if (options.onError) {
-              options.onError(error);
+              options.onError(voltError);
             }
-            controller.error(error);
+            controller.error(voltError);
           }
         },
       });
@@ -499,15 +521,19 @@ export class AnthropicProvider implements LLMProvider<Model> {
         objectStream,
       };
     } catch (error) {
+      const voltError: VoltAgentError = {
+        message: "Error while streaming object in Anthropic AI",
+        originalError: error,
+      };
       if (options.onError) {
-        options.onError(error);
+        options.onError(voltError);
       }
 
       console.error(
         `Failed to create object ${error instanceof Error ? error.message : String(error)}`,
       );
 
-      return { error: String(error) } as any;
+      throw voltError;
     }
   }
 }
